@@ -6,8 +6,8 @@
 %               ex: 'Sample1'
 %   path: file path address dor target directory to save to. MUST BE IN ''. 
 %               ex: 'Sample1'
-%   TracksFile: Filename of the Trackmate .xml output. MUST BE IN ''. 
-%               ex: 'Water1_Tracks.xml'
+%   TracksFile: Shared Filename of the Trackmate .xml output, under the same directory as your 'path'. MUST BE IN ''. 
+%               ex: '01' will read all files that has 01 in their names
 %   varargin: A stand-in variable for the inputparser, which allows inputs
 %             to be optional and take default values when not explicitly given.
 %   
@@ -56,11 +56,6 @@ files = dir(fullfile(path, ['*' TracksFile '*.xml']));
 xmlFileNames = {files.name};
 disp(xmlFileNames);
 
-%Optional additional track files for batch processing. These are positional
-%and must come before other optional variables. NOT passed in the same way
-%as "Parameters' below. Just provide filename in '' like the first
-%addOptional(p,'TracksFile2',[], @mustBeText); 
-
 % Default values, and check validity
 addParameter(p,'period', 8, valid_positive_number); %Duration of video (s). Default 8s
 addParameter(p,'fps', 30, valid_positive_number); %Frame rate of video (1/s). Default 30fps.
@@ -97,7 +92,7 @@ tableopt = p.Results.tableopt;
 %Check if TracksFile2 has been provided (empty [] by default if not)
 disp(['NOW READING: ', xmlFileNames{1}])
 Tracks = importTrackMateTracks(fullfile(path, xmlFileNames{1}), true);
-
+% Add each track data one by one to a big matrix
 if length(xmlFileNames) > 1
     for i = 2:length(xmlFileNames)
         disp(['NOW READING: ', xmlFileNames{i}])
@@ -158,11 +153,13 @@ cla reset
 % Clear any pre-existing graphics from current axes
 cla reset
 %plot MSD
+alpha_values = msd.loglogfit.alpha(goodindices)
+numOfBins = 100
 
 msd.plotMSD(gca, goodindices, false)
-set(gca, 'ColorOrder', colormap(gray))
+set(gca, 'ColorOrder', colormap(gray),'XScale','log','YScale','log') % color and log-log scale set here
 msd.plotMeanMSD(gca, false, goodindices)
-axis([0,1,0,10])
+axis([0,1,10^(-3),10])
 
 if plotopt == 1 %optionally save plot
 plotaddress2 = append(FileTag,'MSDPlot.jpeg');
@@ -170,36 +167,92 @@ saveas(gcf,fullfile(path, plotaddress2));
 end
 %plot alpha distribution
 cla reset
-histogram(msd.loglogfit.alpha(goodindices),100),axis([0,1,0,10])
-xlabel('Alpha')
-ylabel('Frequency')
+h = histogram(msd.loglogfit.alpha(goodindices), 100);
+axis([0, 1, 0, 20]);
+xlabel('Alpha');
+ylabel('Frequency');
+
+% Calculate the percentage values
+totalDataPoints = numel(msd.loglogfit.alpha(goodindices));
+binCounts = h.Values;
+binPercentages = (binCounts / totalDataPoints) * 100;
+
+% Update the y-axis tick labels with percentage values
+yticks(0:5:20); % Set the y-axis ticks to be in 5% increments
+yticklabels(arrayfun(@(x) sprintf('%.0f%%', x), 0:5:20, 'UniformOutput', false));
+
+% Update the y-axis label
+ylabel('Percentage');
+
+ylim([0, 10]);
+yticks(0:1:10); % You can adjust the step size as needed
+yticklabels(string(0:1:10) + "%");
+
 plotaddress3 = append(FileTag,'-Alpha Histogram.jpeg');
 saveas(gcf,fullfile(path, plotaddress3));
+
+
 %plot box plot
 cla reset
-boxchart(msd.loglogfit.alpha(goodindices))
+boxchart(msd.loglogfit.alpha(goodindices)),ylim([0,1])
 ylabel('Alpha')
 plotaddress4 = append(FileTag,'-Alpha Box-whisker chart.jpeg');
 saveas(gcf,fullfile(path, plotaddress4));
 
+% %% Table Data
+% if tableopt == 1
+% % First table is rows of particle x columns alpha, r^2
+% headers1 = {'Alpha', 'R2'};
+% Alpha = table(msd.loglogfit.alpha(goodindices),msd.loglogfit.r2fit(goodindices),'VariableNames', headers1);
+% filename1 = append(FileTag,'Alpha_R2_Table.xlsx');
+% fileaddress1 = fullfile(path, filename1);
+% writetable(Alpha,fileaddress1,'Sheet','AlphaR2')
+% % This table is Mean MSD, an N x 4 [ dT M STD N ] (see getMeanMSD.m)
+% headers3 = {'dT', 'Mean', 'std', 'N'};
+% MeanMSD = array2table(msd.getMeanMSD(goodindices), 'VariableNames', headers3);
+% filename3 = append(FileTag,'MeanMSD.Table.xlsx');
+% fileaddress3 = fullfile(path, filename3);
+% writetable(MeanMSD,fileaddress3,'Sheet','MeanMSD')
+% % Table code for MSD table, saved for posterity
+% % This table is  [dt mean std N (particle number)]
+% % MSDinfo = table(MSDTable);
+% % filename2 = append(FileTag,'MSDInfo.Table.xlsx');
+% % fileaddress2 = fullfile(path, filename2);
+% % writetable(MSDinfo,fileaddress2,'Sheet','MSDInfo')
+% end
+
+% New block to handle the Excel file and column naming
+excelFileName = 'ResultsSummary.xlsx'; % Specify the Excel file name
+excelFilePath = fullfile(path, excelFileName);
+
+% Check if the file exists, if not create a new one
+if ~exist(excelFilePath, 'file')
+    % If the file does not exist, create it with headers
+    headers = {'Alpha', 'Alpha2', 'Alpha3', 'Alpha4', 'Alpha5', 'Alpha6', 'Alpha7', 'Alpha8', 'Alpha9', 'Alpha10', 'Alpha11', 'Alpha12'};
+    writetable(cell2table(cell(0, numel(headers))), excelFilePath, 'Sheet', 'Results', 'WriteVariableNames', false);
+end
+
+% ...
+
 %% Table Data
 if tableopt == 1
-% First table is rows of particle x columns alpha, r^2
-headers1 = {'Alpha', 'R2'};
-Alpha = table(msd.loglogfit.alpha(goodindices),msd.loglogfit.r2fit(goodindices),'VariableNames', headers1);
-filename1 = append(FileTag,'Alpha_R2_Table.xlsx');
-fileaddress1 = fullfile(path, filename1);
-writetable(Alpha,fileaddress1,'Sheet','AlphaR2')
-% This table is Mean MSD, an N x 4 [ dT M STD N ] (see getMeanMSD.m)
-headers3 = {'dT', 'Mean', 'std', 'N'};
-MeanMSD = array2table(msd.getMeanMSD(goodindices), 'VariableNames', headers3);
-filename3 = append(FileTag,'MeanMSD.Table.xlsx');
-fileaddress3 = fullfile(path, filename3);
-writetable(MeanMSD,fileaddress3,'Sheet','MeanMSD')
-% Table code for MSD table, saved for posterity
-% This table is  [dt mean std N (particle number)]
-% MSDinfo = table(MSDTable);
-% filename2 = append(FileTag,'MSDInfo.Table.xlsx');
-% fileaddress2 = fullfile(path, filename2);
-% writetable(MSDinfo,fileaddress2,'Sheet','MSDInfo')
+    % Prepare the data to be saved in the Excel file
+    alphaData = msd.loglogfit.alpha(goodindices);
+    
+    % Load existing data from the Excel file
+    existingData = readtable(excelFilePath, 'Sheet', 'Results');
+    
+    % Add a new column with the current run's data
+    columnName = sprintf('%s_Alpha', FileTag);
+    existingData.(columnName) = alphaData;
+    
+    % Save the updated data back to the Excel file
+    writetable(existingData, excelFilePath, 'Sheet', 'Results');
+    
+    % ...
+
+    % Removed the individual Excel file saving code, as now the data is saved in the summary file
+
+
+
 end
